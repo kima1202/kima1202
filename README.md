@@ -18,3 +18,7 @@ Here are some ideas to get you started:
 
 ### My Contribution Snake
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kima1202/kima1202/output/github-snake-dark.svg">
+  <img alt="GitHub Snake" src="https://raw.githubusercontent.com/kima1202/kima1202/output/github-snake.svg">
+</picture>
