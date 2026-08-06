@@ -15,6 +15,7 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,8 +32,11 @@ jobs:
         run: |
           rm -rf dist
           mkdir -p dist
-          cp generated/github-snake.svg dist/github-snake.svg
-          cp generated/github-snake-dark.svg dist/github-snake-dark.svg
+
+          sudo cp generated/github-snake.svg dist/github-snake.svg
+          sudo cp generated/github-snake-dark.svg dist/github-snake-dark.svg
+
+          sudo chown -R "$USER:$USER" dist
           ls -la dist
 
       - name: Deploy to output branch
