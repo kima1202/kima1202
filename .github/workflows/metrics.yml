@@ -15,7 +15,6 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -23,7 +22,7 @@ jobs:
       - name: Generate snake
         uses: Platane/snk@v3
         with:
-          github_user_name: kima1202
+          github_user_name: hicccc77
           outputs: |
             generated/github-snake.svg
             generated/github-snake-dark.svg?palette=github-dark
@@ -32,11 +31,8 @@ jobs:
         run: |
           rm -rf dist
           mkdir -p dist
-
-          sudo cp generated/github-snake.svg dist/github-snake.svg
-          sudo cp generated/github-snake-dark.svg dist/github-snake-dark.svg
-
-          sudo chown -R "$USER:$USER" dist
+          cp generated/github-snake.svg dist/github-snake.svg
+          cp generated/github-snake-dark.svg dist/github-snake-dark.svg
           ls -la dist
 
       - name: Deploy to output branch
