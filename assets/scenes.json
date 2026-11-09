@@ -1,10 +1,10 @@
 {
   "mode": "single",
-  "season": "autumn",
-  "season_label": "秋",
+  "season": "winter",
+  "season_label": "冬",
   "weather": "clear",
   "weather_label": "晴",
-  "temperature": 13.7,
+  "temperature": 13.4,
   "city": "玉林",
   "source": "open-meteo",
   "animated": true,
