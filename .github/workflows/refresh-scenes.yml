@@ -1,0 +1,111 @@
+name: Refresh animated scene SVGs
+
+# 只由定时器与手动触发：自动提交由 GITHUB_TOKEN 完成，不会再次触发本 workflow，
+# 也不会与「抓取天气」的那条 workflow 抢同一批文件。
+on:
+  schedule:
+    - cron: '0 */6 * * *'   # UTC 每 6 小时；北京时间 08/14/20/02 点各刷新一次
+  workflow_dispatch:
+    inputs:
+      season:
+        description: '强制季节（留空则按月份推算）：spring / summer / autumn / winter'
+        required: false
+        default: ''
+      offline:
+        description: '跳过实时天气，只用仓库内的天气文件'
+        type: boolean
+        required: false
+        default: false
+      static:
+        description: '本次只生成静态 SVG（不导出 GIF）'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-scenes
+  cancel-in-progress: true
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install fonts and GIF deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fonts-wqy-microhei libcairo2
+          python -m pip install --disable-pip-version-check -q cairosvg Pillow
+
+      - name: Generate four animated day/night scenes
+        env:
+          # 位置与展示名可用仓库变量覆盖（Settings → Secrets and variables → Actions → Variables）
+          SCENE_LAT: ${{ vars.SCENE_LAT || '23.09' }}
+          SCENE_LON: ${{ vars.SCENE_LON || '110.18' }}
+          SCENE_CITY: ${{ vars.SCENE_CITY || '玉林' }}
+          SCENE_SEASON: ${{ inputs.season }}
+          SCENE_OFFLINE: ${{ inputs.offline && '1' || '0' }}
+          SCENE_STATIC: ${{ inputs.static && '1' || '0' }}
+        run: |
+          EXTRA=""
+          if [ "$SCENE_STATIC" = "0" ]; then
+            EXTRA="--gif --preview"
+          fi
+          python scripts/gen_scene.py --out-dir assets $EXTRA
+
+      - name: Validate generated files
+        env:
+          EXPECT_GIF: ${{ inputs.static && '0' || '1' }}
+          EXPECT_STATIC: ${{ inputs.static && '1' || '0' }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import pathlib
+          import xml.etree.ElementTree as ET
+          from PIL import Image
+
+          out = pathlib.Path('assets')
+          expect_gif = os.environ.get('EXPECT_GIF', '1') == '1'
+          expect_static = os.environ.get('EXPECT_STATIC', '0') == '1'
+          for phase in ('dawn', 'day', 'dusk', 'night'):
+              path = out / f'scene-{phase}.svg'
+              root = ET.parse(path).getroot()
+              assert root.tag.endswith('svg'), f'{path} 不是 SVG'
+              assert len(list(root)) > 5, f'{path} 内容过少'
+              if expect_gif:
+                  gif = out / f'scene-{phase}.gif'
+                  with Image.open(gif) as im:
+                      assert getattr(im, 'n_frames', 1) > 1, f'{gif} 不是动图'
+          meta = json.loads((out / 'scenes.json').read_text(encoding='utf-8'))
+          assert meta['season'] in ('spring', 'summer', 'autumn', 'winter')
+          assert len(meta['phases']) == 4
+          assert meta['animated'] == (not expect_static)
+          assert meta['gif'] == expect_gif
+          if expect_gif:
+              assert (out / 'scene-preview.gif').is_file()
+          print('校验通过：4 个动态 SVG + scenes.json' + (' + 5 个 GIF' if expect_gif else ''))
+          PY
+
+      - name: Commit generated files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/
+          if git diff --cached --quiet; then
+            echo "场景无变化，跳过提交"
+            exit 0
+          fi
+          git commit -m "chore: refresh animated day/night scenes [skip ci]"
+          git push
