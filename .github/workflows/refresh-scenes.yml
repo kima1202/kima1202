@@ -1,16 +1,30 @@
-name: Refresh animated scene SVGs
+name: Refresh live scene
 
 # 只由定时器与手动触发：自动提交由 GITHUB_TOKEN 完成，不会再次触发本 workflow，
 # 也不会与「抓取天气」的那条 workflow 抢同一批文件。
 on:
   schedule:
-    - cron: '0 */6 * * *'   # UTC 每 6 小时；北京时间 08/14/20/02 点各刷新一次
+    # UTC 每 3 小时 → 北京时间 08/11/14/17/20/23/02/05 点，
+    # 覆盖白昼、黄昏、夜晚、黎明四个时段，单张图会跟着时间换景。
+    - cron: '0 */3 * * *'
   workflow_dispatch:
     inputs:
+      mode:
+        description: '单张（随天气/季节/时段变化）或四张分时段图'
+        type: choice
+        required: false
+        default: 'single'
+        options: ['single', 'quad']
       season:
         description: '强制季节（留空则按月份推算）：spring / summer / autumn / winter'
         required: false
         default: ''
+      phase:
+        description: '单张模式强制时段（留空则按北京时间自动判定）'
+        type: choice
+        required: false
+        default: ''
+        options: ['', 'dawn', 'day', 'dusk', 'night']
       offline:
         description: '跳过实时天气，只用仓库内的天气文件'
         type: boolean
@@ -48,24 +62,31 @@ jobs:
           sudo apt-get install -y -qq fonts-wqy-microhei libcairo2
           python -m pip install --disable-pip-version-check -q cairosvg Pillow
 
-      - name: Generate four animated day/night scenes
+      - name: Generate scene
         env:
           # 位置与展示名可用仓库变量覆盖（Settings → Secrets and variables → Actions → Variables）
           SCENE_LAT: ${{ vars.SCENE_LAT || '23.09' }}
           SCENE_LON: ${{ vars.SCENE_LON || '110.18' }}
           SCENE_CITY: ${{ vars.SCENE_CITY || '玉林' }}
           SCENE_SEASON: ${{ inputs.season }}
+          SCENE_PHASE: ${{ inputs.phase }}
           SCENE_OFFLINE: ${{ inputs.offline && '1' || '0' }}
-          SCENE_STATIC: ${{ inputs.static && '1' || '0' }}
+          MODE: ${{ inputs.mode || 'single' }}
+          STATIC: ${{ inputs.static && '1' || '0' }}
         run: |
           EXTRA=""
-          if [ "$SCENE_STATIC" = "0" ]; then
-            EXTRA="--gif --preview"
+          if [ "$MODE" = "single" ]; then
+            EXTRA="$EXTRA --single"
+          elif [ "$STATIC" = "0" ]; then
+            EXTRA="$EXTRA --preview"
           fi
+          if [ -n "$SCENE_PHASE" ]; then EXTRA="$EXTRA --phase $SCENE_PHASE"; fi
+          if [ "$STATIC" = "0" ]; then EXTRA="$EXTRA --gif"; fi
           python scripts/gen_scene.py --out-dir assets $EXTRA
 
       - name: Validate generated files
         env:
+          MODE: ${{ inputs.mode || 'single' }}
           EXPECT_GIF: ${{ inputs.static && '0' || '1' }}
           EXPECT_STATIC: ${{ inputs.static && '1' || '0' }}
         run: |
@@ -77,26 +98,48 @@ jobs:
           from PIL import Image
 
           out = pathlib.Path('assets')
+          single = os.environ.get('MODE', 'single') == 'single'
           expect_gif = os.environ.get('EXPECT_GIF', '1') == '1'
           expect_static = os.environ.get('EXPECT_STATIC', '0') == '1'
-          for phase in ('dawn', 'day', 'dusk', 'night'):
-              path = out / f'scene-{phase}.svg'
+          meta = json.loads((out / 'scenes.json').read_text(encoding='utf-8'))
+
+          assert meta['mode'] == ('single' if single else 'quad')
+          assert meta['season'] in ('spring', 'summer', 'autumn', 'winter')
+          assert meta['animated'] == (not expect_static)
+          assert meta['gif'] == expect_gif
+
+          stems = ['scene-live'] if single else [f'scene-{p}' for p in ('dawn','day','dusk','night')]
+          for stem in stems:
+              path = out / f'{stem}.svg'
               root = ET.parse(path).getroot()
               assert root.tag.endswith('svg'), f'{path} 不是 SVG'
               assert len(list(root)) > 5, f'{path} 内容过少'
               if expect_gif:
-                  gif = out / f'scene-{phase}.gif'
+                  gif = out / f'{stem}.gif'
                   with Image.open(gif) as im:
                       assert getattr(im, 'n_frames', 1) > 1, f'{gif} 不是动图'
-          meta = json.loads((out / 'scenes.json').read_text(encoding='utf-8'))
-          assert meta['season'] in ('spring', 'summer', 'autumn', 'winter')
-          assert len(meta['phases']) == 4
-          assert meta['animated'] == (not expect_static)
-          assert meta['gif'] == expect_gif
-          if expect_gif:
+          if not single and expect_gif:
               assert (out / 'scene-preview.gif').is_file()
-          print('校验通过：4 个动态 SVG + scenes.json' + (' + 5 个 GIF' if expect_gif else ''))
+          assert len(meta['phases']) == len(stems)
+          print(f'校验通过：{len(stems)} 张动态 SVG + scenes.json'
+                + (f' + {len(stems) + (0 if single else 1)} 张 GIF' if expect_gif else ''))
           PY
+
+      - name: Drop files from the other mode
+        env:
+          MODE: ${{ inputs.mode || 'single' }}
+        run: |
+          if [ "$MODE" = "single" ]; then
+            git rm -f --ignore-unmatch \
+              assets/scene-dawn.svg assets/scene-day.svg \
+              assets/scene-dusk.svg assets/scene-night.svg \
+              assets/scene-dawn.gif assets/scene-day.gif \
+              assets/scene-dusk.gif assets/scene-night.gif \
+              assets/scene-preview.gif || true
+          else
+            git rm -f --ignore-unmatch \
+              assets/scene-live.svg assets/scene-live.gif || true
+          fi
 
       - name: Commit generated files
         run: |
@@ -107,5 +150,5 @@ jobs:
             echo "场景无变化，跳过提交"
             exit 0
           fi
-          git commit -m "chore: refresh animated day/night scenes [skip ci]"
+          git commit -m "chore: refresh live weather scene [skip ci]"
           git push
