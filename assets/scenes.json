@@ -1,0 +1,27 @@
+{
+  "mode": "single",
+  "season": "autumn",
+  "season_label": "秋",
+  "weather": "partly_cloudy",
+  "weather_label": "多云",
+  "temperature": 24.5,
+  "city": "玉林",
+  "source": "default",
+  "animated": true,
+  "gif": true,
+  "frames": 20,
+  "frame_ms": 90,
+  "updated_at": "2026-11-09",
+  "phase": "night",
+  "phase_label": "夜晚",
+  "live_file": "scene-live.svg",
+  "live_gif": "scene-live.gif",
+  "phases": [
+    {
+      "key": "night",
+      "label": "夜晚",
+      "file": "scene-live.svg",
+      "gif": "scene-live.gif"
+    }
+  ]
+}
