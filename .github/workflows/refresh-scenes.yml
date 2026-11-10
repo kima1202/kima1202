@@ -1,23 +1,11 @@
-name: Refresh live weather scene
+name: Refresh live scene
 
-# 直接覆盖仓库里已有的 .github/workflows/refresh-scenes.yml 即可，不需要改 Settings、
-# 不需要替换 scripts/gen_scene.py、不需要动已有的 Snake/metrics workflow。
-#
-# 三个「免操作」设计：
-#   1) 季节由本 workflow 按节气算好并通过 SCENE_SEASON 注入（SCENE_SEASON 优先级最高），
-#      所以旧版脚本按整月算出「秋」、或 data/weather.json 里锁了 season 都会被纠正：
-#      11/7 立冬起就是 winter，且四季仍随日期自动变化。
-#   2) 能力探测：读 scripts/gen_scene.py --help，只传它认识的参数，
-#      因此新版/旧版、单张/四张脚本都能跑，不会因未知参数报错。
-#   3) 缓存自动破：产物有变化时，把 README 里 assets/scene-live.* 的 ?v= 换成
-#      本次 run id（只改这一处，不碰 Snake 那块）；无变化则完全不提交。
-#
-# 共存：只提交 main 分支的 assets/（+ README 的一行版本号），不碰 output 分支、
-# dist/ 或任何别的文件；只监听 schedule / workflow_dispatch，不会被 push 引爆；
-# 由 GITHUB_TOKEN 产生的推送默认不会再触发本 workflow，提交信息也带 [skip ci]。
+# 只由定时器与手动触发：自动提交由 GITHUB_TOKEN 完成，不会再次触发本 workflow，
+# 也不会与「抓取天气」的那条 workflow 抢同一批文件。
 on:
   schedule:
-    # UTC 每 3 小时 → 北京时间 08/11/14/17/20/23/02/05，覆盖四个时段
+    # UTC 每 3 小时 → 北京时间 08/11/14/17/20/23/02/05 点，
+    # 覆盖白昼、黄昏、夜晚、黎明四个时段，单张图会跟着时间换景。
     - cron: '0 */3 * * *'
   workflow_dispatch:
     inputs:
@@ -28,13 +16,11 @@ on:
         default: 'single'
         options: ['single', 'quad']
       season:
-        description: '强制季节，留空则按节气自动判定（推荐留空）'
-        type: choice
+        description: '强制季节（留空则按月份推算）：spring / summer / autumn / winter'
         required: false
         default: ''
-        options: ['', 'spring', 'summer', 'autumn', 'winter']
       phase:
-        description: '单张模式强制时段，留空按北京时间自动判定'
+        description: '单张模式强制时段（留空则按北京时间自动判定）'
         type: choice
         required: false
         default: ''
@@ -59,8 +45,7 @@ concurrency:
 
 jobs:
   generate:
-    # 锁镜像版本，避免 ubuntu-latest 迁移提示；不影响 apt 安装字体与 cairo
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Checkout
@@ -71,47 +56,6 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Resolve season (solar terms, injected via SCENE_SEASON)
-        # 单独一步写 GITHUB_ENV，后续步骤才能读到；生成步骤里不要再写同名 step env。
-        env:
-          FORCED_SEASON: ${{ inputs.season }}
-          SEASON_RULE: ${{ vars.SCENE_SEASON_RULE || 'solar' }}
-          HEMISPHERE: ${{ vars.SCENE_HEMISPHERE || 'north' }}
-        run: |
-          if [ -n "$FORCED_SEASON" ]; then
-            SEASON="$FORCED_SEASON"
-            echo "使用手动指定的季节: $SEASON"
-          else
-            SEASON="$(python - <<'PY'
-          import datetime as dt
-          import os
-
-          # 北京时间；季节按节气（默认）或整月（SCENE_SEASON_RULE=month）
-          now = dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=8)
-          md = (now.month, now.day)
-          rule = os.environ.get('SEASON_RULE', 'solar')
-          if rule == 'month':
-              idx = {12: 3, 1: 3, 2: 3, 3: 0, 4: 0, 5: 0,
-                     6: 1, 7: 1, 8: 1, 9: 2, 10: 2, 11: 2}[now.month]
-          else:
-              # 2/4 立春、5/5 立夏、8/7 立秋、11/7 立冬
-              if md >= (11, 7) or md < (2, 4):
-                  idx = 3
-              elif md < (5, 5):
-                  idx = 0
-              elif md < (8, 7):
-                  idx = 1
-              else:
-                  idx = 2
-          if os.environ.get('HEMISPHERE', 'north') == 'south':
-              idx = (idx + 2) % 4
-          print(('spring', 'summer', 'autumn', 'winter')[idx])
-          PY
-          )"
-            echo "按节气自动判定季节: $SEASON（北京时间 $(TZ='Asia/Shanghai' date '+%Y-%m-%d %H:%M')）"
-          fi
-          echo "SCENE_SEASON=$SEASON" >> "$GITHUB_ENV"
-
       - name: Install fonts and GIF deps
         run: |
           sudo apt-get update -qq
@@ -120,115 +64,72 @@ jobs:
 
       - name: Generate scene
         env:
+          # 位置与展示名可用仓库变量覆盖（Settings → Secrets and variables → Actions → Variables）
           SCENE_LAT: ${{ vars.SCENE_LAT || '23.09' }}
           SCENE_LON: ${{ vars.SCENE_LON || '110.18' }}
           SCENE_CITY: ${{ vars.SCENE_CITY || '玉林' }}
+          SCENE_SEASON: ${{ inputs.season }}
           SCENE_PHASE: ${{ inputs.phase }}
           SCENE_OFFLINE: ${{ inputs.offline && '1' || '0' }}
           MODE: ${{ inputs.mode || 'single' }}
           STATIC: ${{ inputs.static && '1' || '0' }}
-          # 注意：这里刻意不写 SCENE_SEASON / SCENE_STATIC，
-          # SCENE_SEASON 由 Resolve season 步骤经 GITHUB_ENV 注入。
         run: |
-          set -e
-          test -f scripts/gen_scene.py || { echo "::error::缺少 scripts/gen_scene.py"; exit 1; }
-          HELP="$(python scripts/gen_scene.py --help 2>&1 || true)"
-          # -F 固定字符串匹配；调用形如 has '--single'（不要多传一个 '--'）
-          has() { printf '%s' "$HELP" | grep -q -F -- "$1"; }
-
-          ARGS=(--out-dir assets)
-          EFFECTIVE_MODE="quad"
-          GIF_SUPPORTED="0"
-
-          if [ "$MODE" = "single" ] && has '--single'; then
-            ARGS+=(--single)
-            EFFECTIVE_MODE="single"
-          elif [ "$MODE" = "single" ]; then
-            echo "[warn] 当前脚本不支持 --single，退化为四张分时段图"
+          EXTRA=""
+          if [ "$MODE" = "single" ]; then
+            EXTRA="$EXTRA --single"
+          elif [ "$STATIC" = "0" ]; then
+            EXTRA="$EXTRA --preview"
           fi
-
-          if [ -n "${{ inputs.phase }}" ] && has '--phase'; then
-            ARGS+=(--phase "${{ inputs.phase }}")
-          fi
-
-          if [ "$STATIC" = "1" ]; then
-            has '--static' && ARGS+=(--static)
-          else
-            if has '--gif'; then
-              ARGS+=(--gif)
-              GIF_SUPPORTED="1"
-              if [ "$EFFECTIVE_MODE" = "quad" ]; then
-                has '--preview' && ARGS+=(--preview)
-              fi
-            else
-              echo "[warn] 当前脚本不支持 --gif，本次只输出 SVG"
-            fi
-          fi
-
-          if [ "${{ inputs.offline }}" = "true" ] && has '--offline'; then
-            ARGS+=(--offline)
-          fi
-          if has '--frames'; then ARGS+=(--frames 20); fi
-          if has '--frame-ms'; then ARGS+=(--frame-ms 90); fi
-
-          echo "本次季节(注入): ${SCENE_SEASON:-未设置} · 模式: $EFFECTIVE_MODE · GIF: $GIF_SUPPORTED"
-          echo "执行: python scripts/gen_scene.py ${ARGS[*]}"
-          python scripts/gen_scene.py "${ARGS[@]}"
-          echo "EFFECTIVE_MODE=$EFFECTIVE_MODE" >> "$GITHUB_ENV"
-          echo "GIF_SUPPORTED=$GIF_SUPPORTED" >> "$GITHUB_ENV"
+          if [ -n "$SCENE_PHASE" ]; then EXTRA="$EXTRA --phase $SCENE_PHASE"; fi
+          if [ "$STATIC" = "0" ]; then EXTRA="$EXTRA --gif"; fi
+          python scripts/gen_scene.py --out-dir assets $EXTRA
 
       - name: Validate generated files
         env:
+          MODE: ${{ inputs.mode || 'single' }}
           EXPECT_GIF: ${{ inputs.static && '0' || '1' }}
+          EXPECT_STATIC: ${{ inputs.static && '1' || '0' }}
         run: |
           python - <<'PY'
           import json
           import os
           import pathlib
           import xml.etree.ElementTree as ET
+          from PIL import Image
 
           out = pathlib.Path('assets')
-          # 脚本本身不支持 --gif（旧版）时，不能反过来要求产物里必须有 GIF
-          expect_gif = (os.environ.get('EXPECT_GIF', '1') == '1'
-                        and os.environ.get('GIF_SUPPORTED', '1') == '1')
-          expect_season = os.environ.get('SCENE_SEASON', '')
+          single = os.environ.get('MODE', 'single') == 'single'
+          expect_gif = os.environ.get('EXPECT_GIF', '1') == '1'
+          expect_static = os.environ.get('EXPECT_STATIC', '0') == '1'
+          meta = json.loads((out / 'scenes.json').read_text(encoding='utf-8'))
 
-          svgs = sorted(out.glob('scene-*.svg'))
-          assert svgs, 'assets/ 下没有任何 scene-*.svg'
-          for p in svgs:
-              root = ET.parse(p).getroot()
-              assert root.tag.endswith('svg'), f'{p} 不是 SVG'
-              assert len(list(root)) > 5, f'{p} 内容过少'
+          assert meta['mode'] == ('single' if single else 'quad')
+          assert meta['season'] in ('spring', 'summer', 'autumn', 'winter')
+          assert meta['animated'] == (not expect_static)
+          assert meta['gif'] == expect_gif
 
-          meta_path = out / 'scenes.json'
-          if meta_path.is_file():
-              meta = json.loads(meta_path.read_text(encoding='utf-8'))
-              assert meta.get('season') in ('spring', 'summer', 'autumn', 'winter')
-              if expect_season:
-                  assert meta['season'] == expect_season, (
-                      f"季节不一致：期望 {expect_season}，实际 {meta['season']}。"
-                      '检查 data/weather.json 是否锁了 season、或脚本是否过旧。')
-
-          if expect_gif:
-              try:
-                  from PIL import Image
-              except ImportError:
-                  print('[warn] Pillow 不可用，跳过 GIF 帧数校验')
-              else:
-                  gifs = sorted(out.glob('scene-*.gif'))
-                  assert gifs, '声明了 GIF 导出，但 assets/ 下没有 .gif'
-                  for g in gifs:
-                      with Image.open(g) as im:
-                          assert getattr(im, 'n_frames', 1) > 1, f'{g} 不是动图'
-
-          print(f'校验通过：{len(svgs)} 张 SVG'
-                + (f' + {len(sorted(out.glob("scene-*.gif")))} 张 GIF' if expect_gif else '')
-                + f' · 季节={expect_season or "未注入"}')
+          stems = ['scene-live'] if single else [f'scene-{p}' for p in ('dawn','day','dusk','night')]
+          for stem in stems:
+              path = out / f'{stem}.svg'
+              root = ET.parse(path).getroot()
+              assert root.tag.endswith('svg'), f'{path} 不是 SVG'
+              assert len(list(root)) > 5, f'{path} 内容过少'
+              if expect_gif:
+                  gif = out / f'{stem}.gif'
+                  with Image.open(gif) as im:
+                      assert getattr(im, 'n_frames', 1) > 1, f'{gif} 不是动图'
+          if not single and expect_gif:
+              assert (out / 'scene-preview.gif').is_file()
+          assert len(meta['phases']) == len(stems)
+          print(f'校验通过：{len(stems)} 张动态 SVG + scenes.json'
+                + (f' + {len(stems) + (0 if single else 1)} 张 GIF' if expect_gif else ''))
           PY
 
       - name: Drop files from the other mode
+        env:
+          MODE: ${{ inputs.mode || 'single' }}
         run: |
-          if [ "$EFFECTIVE_MODE" = "single" ]; then
+          if [ "$MODE" = "single" ]; then
             git rm -f --ignore-unmatch \
               assets/scene-dawn.svg assets/scene-day.svg \
               assets/scene-dusk.svg assets/scene-night.svg \
@@ -241,44 +142,13 @@ jobs:
           fi
 
       - name: Commit generated files
-        env:
-          CACHE_TAG: ${{ github.run_id }}
-          BRANCH: ${{ github.ref_name }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add assets/
           if git diff --cached --quiet; then
-            echo "场景无变化，跳过提交（内容确定性设计，不撑大 git 历史）"
+            echo "场景无变化，跳过提交"
             exit 0
           fi
-
-          # 仅在产物真的变了时，顺手把 README 里 scene-live 图片的 ?v= 换成本次 run id，
-          # 让 GitHub 图片代理把它当成新 URL，立刻显示新版画面。
-          # 若 README 没引用 scene-live，这一步一个字都不会改，也不会触碰 Snake 那块。
-          python - <<'PY'
-          import os
-          import pathlib
-          import re
-
-          p = pathlib.Path('README.md')
-          if not p.is_file():
-              print('README.md 不存在，跳过缓存刷新')
-              raise SystemExit(0)
-          s = p.read_text(encoding='utf-8')
-          if 'assets/scene-live.' not in s:
-              print('README 未引用 assets/scene-live.*，跳过（不改动任何内容）')
-              raise SystemExit(0)
-          tag = os.environ.get('CACHE_TAG', '1')
-          pattern = r'(assets/scene-live\.(?:svg|gif))(?:\?v=[^"\'\s<>)]*)?'
-          new, n = re.subn(pattern, lambda m: f"{m.group(1)}?v={tag}", s)
-          if n == 0 or new == s:
-              print('图片版本号已是最新，无需更新')
-              raise SystemExit(0)
-          p.write_text(new, encoding='utf-8')
-          print(f'已更新 {n} 处图片版本号为 ?v={tag}')
-          PY
-          git add README.md
-
           git commit -m "chore: refresh live weather scene [skip ci]"
-          git push || { echo "首次 push 失败，rebase 后重试"; git pull --rebase origin "$BRANCH" && git push; }
+          git push
