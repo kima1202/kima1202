@@ -2,9 +2,9 @@
   "mode": "single",
   "season": "autumn",
   "season_label": "秋",
-  "weather": "partly_cloudy",
-  "weather_label": "多云",
-  "temperature": 11.8,
+  "weather": "overcast",
+  "weather_label": "阴",
+  "temperature": 19.6,
   "city": "玉林",
   "source": "open-meteo",
   "animated": true,
@@ -12,14 +12,14 @@
   "frames": 20,
   "frame_ms": 90,
   "updated_at": "2026-11-11",
-  "phase": "dawn",
-  "phase_label": "黎明",
+  "phase": "day",
+  "phase_label": "白昼",
   "live_file": "scene-live.svg",
   "live_gif": "scene-live.gif",
   "phases": [
     {
-      "key": "dawn",
-      "label": "黎明",
+      "key": "day",
+      "label": "白昼",
       "file": "scene-live.svg",
       "gif": "scene-live.gif"
     }
