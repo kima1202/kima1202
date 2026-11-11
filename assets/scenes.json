@@ -2,9 +2,9 @@
   "mode": "single",
   "season": "winter",
   "season_label": "冬",
-  "weather": "overcast",
-  "weather_label": "阴",
-  "temperature": 20.8,
+  "weather": "clear",
+  "weather_label": "晴",
+  "temperature": 15.3,
   "city": "玉林",
   "source": "open-meteo",
   "animated": true,
@@ -12,14 +12,14 @@
   "frames": 20,
   "frame_ms": 90,
   "updated_at": "2026-11-11",
-  "phase": "day",
-  "phase_label": "白昼",
+  "phase": "night",
+  "phase_label": "夜晚",
   "live_file": "scene-live.svg",
   "live_gif": "scene-live.gif",
   "phases": [
     {
-      "key": "day",
-      "label": "白昼",
+      "key": "night",
+      "label": "夜晚",
       "file": "scene-live.svg",
       "gif": "scene-live.gif"
     }
