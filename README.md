@@ -17,7 +17,7 @@ Here are some ideas to get you started:
 
 ### 🌤️ now my city
 
-<img src="assets/scene-live.svg?v=43847792066" width="100%" alt="随天气与季节变化的动态风景">
+<img src="assets/scene-live.svg?v=43959598625" width="100%" alt="随天气与季节变化的动态风景">
 
 
 
