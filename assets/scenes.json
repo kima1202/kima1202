@@ -4,22 +4,22 @@
   "season_label": "冬",
   "weather": "clear",
   "weather_label": "晴",
-  "temperature": null,
+  "temperature": 15.7,
   "city": "玉林",
-  "source": "default",
+  "source": "open-meteo",
   "animated": true,
   "gif": true,
   "frames": 20,
   "frame_ms": 90,
   "updated_at": "2026-11-21",
-  "phase": "night",
-  "phase_label": "夜晚",
+  "phase": "day",
+  "phase_label": "白昼",
   "live_file": "scene-live.svg",
   "live_gif": "scene-live.gif",
   "phases": [
     {
-      "key": "night",
-      "label": "夜晚",
+      "key": "day",
+      "label": "白昼",
       "file": "scene-live.svg",
       "gif": "scene-live.gif"
     }
