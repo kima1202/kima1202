@@ -17,7 +17,7 @@ Here are some ideas to get you started:
 
 ### 🌤️ the weather in Home
 
-<img src="assets/scene-live.svg?v=45348162406" width="100%" alt="随天气与季节变化的动态风景">
+<img src="assets/scene-live.svg?v=45473732332" width="100%" alt="随天气与季节变化的动态风景">
 
 
 
